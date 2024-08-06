@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="light_yellow">#FFFDE7</color>
+    <color name="medium_yellow">#FFF9C4</color>
+    <color name="dark_yellow">#FFF59D</color>
+    <color name="road_color">#424242</color>
+    <color name="car_color">#1E88E5</color>
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+</resources>
