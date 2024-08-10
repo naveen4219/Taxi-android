@@ -5,7 +5,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.compose.setContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -38,9 +37,14 @@ class BookingConfirmationActivity : FragmentActivity() {
 
         setContent {
             MaterialTheme {
-                BookingConfirmationScreen(bookingDetails, ::showTaxiArrivedFragment)
+                BookingConfirmationScreen(bookingDetails, ::showTaxiArrivedFragment, ::openProfileActivity)
             }
         }
+    }
+
+    private fun openProfileActivity() {
+        val intent = Intent(this, ProfileActivity::class.java)
+        startActivity(intent)
     }
 
     private fun showTaxiArrivedFragment() {
@@ -57,7 +61,8 @@ class BookingConfirmationActivity : FragmentActivity() {
 @Composable
 fun BookingConfirmationScreen(
     bookingDetails: BookingDetails?,
-    showTaxiArrivedFragment: () -> Unit
+    showTaxiArrivedFragment: () -> Unit,
+    openProfileActivity: () -> Unit
 ) {
     var showCancelRideButton by remember { mutableStateOf(true) }
     var driverDetails by remember { mutableStateOf<DriverDetails?>(null) }
@@ -106,7 +111,7 @@ fun BookingConfirmationScreen(
         TopAppBar(
             title = { Text("BetterCommute", fontWeight = FontWeight.Bold) },
             actions = {
-                IconButton(onClick = { /* TODO: Open profile */ }) {
+                IconButton(onClick = { openProfileActivity }) {
                     Icon(Icons.Default.AccountCircle, contentDescription = "Profile")
                 }
             },
