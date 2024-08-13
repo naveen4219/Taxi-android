@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
 
 
 interface DriverApi {
-    @GET("271e1351-9692-4d0b-be56-03b00880626c")
+    @GET("b9d797c3-5a0c-4540-ac92-2c735b24e2b7")
     suspend fun getDriverDetails(): DriverDetails
 }
 

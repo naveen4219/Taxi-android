@@ -23,11 +23,14 @@ import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.firebase.auth.FirebaseAuth
 import com.google.maps.android.compose.*
 import kotlinx.coroutines.delay
 import uk.ac.tees.mad.D3746064.data.DriverDetails
 import uk.ac.tees.mad.D3746064.fragments.TaxiArrivedFragment
 import uk.ac.tees.mad.D3746064.services.DriverApiService
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ServerValue
 
 class BookingConfirmationActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,6 +58,11 @@ class BookingConfirmationActivity : FragmentActivity() {
         }
         fragment.show(supportFragmentManager, "TaxiArrivedFragment")
     }
+
+    override fun onBackPressed() {
+        super.onBackPressed()
+        startActivity(Intent(this,BookingConfirmationActivity::class.java))
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,6 +76,7 @@ fun BookingConfirmationScreen(
     var driverDetails by remember { mutableStateOf<DriverDetails?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var progress by remember { mutableStateOf(0f) }
+    var isBookingSaved by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
 
@@ -76,11 +85,43 @@ fun BookingConfirmationScreen(
         showCancelRideButton = false
     }
 
-    // Fetch driver details
     LaunchedEffect(key1 = Unit) {
         try {
+            val currentUser = FirebaseAuth.getInstance().currentUser
             driverDetails = DriverApiService.driverApi.getDriverDetails()
             Log.d("API_RESPONSE", "Driver details: $driverDetails")
+
+            // Save booking details to Firebase
+            bookingDetails?.let { details ->
+                val database = FirebaseDatabase.getInstance().reference
+                val bookingRef = database.child("bookings").push()
+
+                val booking = mapOf(
+                    "id" to bookingRef.key,
+                    "userId" to (currentUser?.uid ?: ""),
+                    "fromLat" to details.fromLat,
+                    "fromLng" to details.fromLng,
+                    "toLat" to details.toLat,
+                    "toLng" to details.toLng,
+                    "carType" to details.carType,
+                    "distance" to details.distance,
+                    "pricePerKm" to details.pricePerKm,
+                    "totalPrice" to details.totalPrice,
+                    "driverName" to driverDetails?.name,
+                    "driverMobile" to driverDetails?.mobileNumber,
+                    "timestamp" to ServerValue.TIMESTAMP
+                )
+
+                bookingRef.setValue(booking)
+                    .addOnSuccessListener {
+                        Log.d("FIREBASE", "Booking saved successfully")
+                        isBookingSaved = true
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e("FIREBASE", "Error saving booking", e)
+                        errorMessage = "Error saving booking: ${e.message}"
+                    }
+            }
         } catch (e: Exception) {
             Log.e("API_ERROR", "Error fetching driver details", e)
             errorMessage = "Error: ${e.message}"
@@ -111,7 +152,7 @@ fun BookingConfirmationScreen(
         TopAppBar(
             title = { Text("BetterCommute", fontWeight = FontWeight.Bold) },
             actions = {
-                IconButton(onClick = { openProfileActivity }) {
+                IconButton(onClick = { openProfileActivity() }) {
                     Icon(Icons.Default.AccountCircle, contentDescription = "Profile")
                 }
             },
@@ -214,6 +255,11 @@ fun BookingConfirmationScreen(
                 Text("Call Driver")
             }
         } ?: Text("Booking details not available")
+
+        // Confirmation message for successful booking save
+        if (isBookingSaved) {
+            Text("Booking confirmed and saved!", color = Color.Green, modifier = Modifier.padding(16.dp))
+        }
 
         // Display error message if any
         errorMessage?.let { error ->

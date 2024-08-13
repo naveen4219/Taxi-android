@@ -1,5 +1,8 @@
 package uk.ac.tees.mad.D3746064
+
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -19,39 +22,83 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.FirebaseDatabase
 
 class LoginActivity : ComponentActivity() {
     private lateinit var auth: FirebaseAuth
+    private lateinit var database: FirebaseDatabase
+    private lateinit var sharedPreferences: SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         auth = FirebaseAuth.getInstance()
+        database = FirebaseDatabase.getInstance()
+        sharedPreferences = getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+
         setContent {
+            var isLoading by remember { mutableStateOf(false) }
+
             LoginScreen(
-                onSignInClick = { email, password -> handleSignIn(email, password) },
+                onSignInClick = { email, password ->
+                    isLoading = true
+                    handleSignIn(email, password) { isLoading = false }
+                },
                 onSignUpClick = { navigateToSignUp() },
                 onGoogleSignInClick = { handleGoogleSignIn() },
-                onFacebookSignInClick = { handleFacebookSignIn() }
+                onFacebookSignInClick = { handleFacebookSignIn() },
+                isLoading = isLoading
             )
         }
     }
 
-    private fun handleSignIn(email: String, password: String) {
+    private fun handleSignIn(email: String, password: String, onComplete: () -> Unit) {
         auth.signInWithEmailAndPassword(email, password)
             .addOnCompleteListener(this) { task ->
                 if (task.isSuccessful) {
-                    // Sign in success, update UI with the signed-in user's information
                     val user = auth.currentUser
-                    Toast.makeText(this, "Authentication successful.", Toast.LENGTH_SHORT).show()
-                    // Navigate to main activity or home screen
-                    startActivity(Intent(this, MainActivity::class.java))
-                    finish()
+                    user?.let {
+                        fetchUserDataAndSave(it.uid)
+                    }
                 } else {
-                    // If sign in fails, display a message to the user.
                     Toast.makeText(this, "Authentication failed: ${task.exception?.message}",
                         Toast.LENGTH_SHORT).show()
+                    onComplete()
                 }
             }
+    }
+
+    private fun fetchUserDataAndSave(userId: String) {
+        val userRef = database.reference.child("users").child(userId)
+        userRef.get().addOnSuccessListener { dataSnapshot ->
+            val userData = dataSnapshot.value as? Map<String, Any>
+            userData?.let { data ->
+                saveUserData(data)
+                Toast.makeText(this, "Login successful", Toast.LENGTH_SHORT).show()
+                navigateToMainActivity()
+            } ?: run {
+                Toast.makeText(this, "Failed to fetch user data", Toast.LENGTH_SHORT).show()
+            }
+        }.addOnFailureListener { e ->
+            Toast.makeText(this, "Error fetching user data: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun saveUserData(userData: Map<String, Any>) {
+        with(sharedPreferences.edit()) {
+            putString("name", userData["name"] as? String ?: "")
+            putString("email", userData["email"] as? String ?: "")
+            putString("countryCode", userData["countryCode"] as? String ?: "")
+            putString("mobile", userData["mobile"] as? String ?: "")
+            apply()
+        }
+    }
+
+    private fun navigateToMainActivity() {
+        var intent :Intent = Intent(this, MainActivity::class.java)
+        intent.putExtra("showAuth","yes")
+
+        startActivity(intent)
+        finish()
     }
 
     private fun navigateToSignUp() {
@@ -59,38 +106,33 @@ class LoginActivity : ComponentActivity() {
     }
 
     private fun handleGoogleSignIn() {
-        // Implement Google sign-in
-        Toast.makeText(this, "Unable to Login", Toast.LENGTH_SHORT).show()
-        // You would typically:
-        // 1. Configure Google Sign-In
-        // 2. Start the sign-in intent
-        // 3. Handle the result in onActivityResult
+        Toast.makeText(this, "Google Sign-In not implemented", Toast.LENGTH_SHORT).show()
     }
 
     private fun handleFacebookSignIn() {
-        // Implement Facebook sign-in
-        Toast.makeText(this, "Unable to Login", Toast.LENGTH_SHORT).show()
-        // You would typically:
-        // 1. Configure Facebook SDK
-        // 2. Call LoginManager.getInstance().logInWithReadPermissions()
-        // 3. Handle the result in onActivityResult
+        Toast.makeText(this, "Facebook Sign-In not implemented", Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onBackPressed() {
+        super.onBackPressed()
+        finish()
     }
 }
-
-// Define colors
-val DeepsYellow = Color(0xFFFFA500)
-val DeepsBlack = Color(0xFF000000)
-val DeepsWhite = Color(0xFFFFFFFF)
 
 @Composable
 fun LoginScreen(
     onSignInClick: (String, String) -> Unit,
     onSignUpClick: () -> Unit,
     onGoogleSignInClick: () -> Unit,
-    onFacebookSignInClick: () -> Unit
+    onFacebookSignInClick: () -> Unit,
+    isLoading: Boolean
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    // Define colors
+    val DeepsYellow = MaterialTheme.colorScheme.primary
+    val DeepsBlack = Color(0xFF000000)
+    val DeepsWhite = Color(0xFFFFFFFF)
 
     Box(
         modifier = Modifier
@@ -116,7 +158,11 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(16.dp))
             PasswordTextField(password = password, onPasswordChange = { password = it })
             Spacer(modifier = Modifier.height(24.dp))
-            AuthButton(text = "Sign In") { onSignInClick(email, password) }
+            AuthButton(
+                text = "Sign In",
+                onClick = { onSignInClick(email, password) },
+                isLoading = isLoading
+            )
             Spacer(modifier = Modifier.height(16.dp))
             Text("Forgot Password?", color = DeepsYellow)
             Spacer(modifier = Modifier.height(24.dp))
@@ -140,6 +186,7 @@ fun LoginScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EmailTextField(email: String, onEmailChange: (String) -> Unit) {
+    val DeepsYellow = MaterialTheme.colorScheme.primary
     OutlinedTextField(
         value = email,
         onValueChange = onEmailChange,
@@ -155,6 +202,7 @@ fun EmailTextField(email: String, onEmailChange: (String) -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PasswordTextField(password: String, onPasswordChange: (String) -> Unit) {
+    val DeepsYellow = MaterialTheme.colorScheme.primary
     OutlinedTextField(
         value = password,
         onValueChange = onPasswordChange,
@@ -169,15 +217,25 @@ fun PasswordTextField(password: String, onPasswordChange: (String) -> Unit) {
 }
 
 @Composable
-fun AuthButton(text: String, onClick: () -> Unit) {
+fun AuthButton(text: String, onClick: () -> Unit, isLoading: Boolean) {
+    val DeepsYellow = MaterialTheme.colorScheme.primary
+    val DeepsBlack = Color(0xFF000000)
     Button(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .height(50.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = DeepsYellow)
+        colors = ButtonDefaults.buttonColors(containerColor = DeepsYellow),
+        enabled = !isLoading
     ) {
-        Text(text, color = DeepsBlack, fontSize = 16.sp)
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                color = DeepsBlack
+            )
+        } else {
+            Text(text, color = DeepsBlack, fontSize = 16.sp)
+        }
     }
 }
 
@@ -210,6 +268,7 @@ fun SocialButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val DeepsBlack = Color(0xFF000000)
     OutlinedButton(
         onClick = onClick,
         modifier = modifier.height(50.dp),
@@ -222,6 +281,7 @@ fun SocialButton(
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
+
             Text(text)
         }
     }

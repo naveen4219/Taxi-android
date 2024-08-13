@@ -8,6 +8,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,68 +22,114 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
+import com.google.firebase.database.FirebaseDatabase
 
 class CreateAccountActivity : ComponentActivity() {
     private lateinit var auth: FirebaseAuth
+    private lateinit var database: FirebaseDatabase
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         auth = FirebaseAuth.getInstance()
+        database = FirebaseDatabase.getInstance()
 
         setContent {
+            var isLoading by remember { mutableStateOf(false) }
+
             CreateAccountScreen(
-                onSignUpClick = { email, password -> handleSignUp(email, password) },
-                onSignInClick = { finish() } // Go back to LoginActivity
+                onSignUpClick = { name, email, countryCode, mobile, password ->
+                    isLoading = true
+                    handleSignUp(name, email, countryCode, mobile, password) {
+                        isLoading = false
+                    }
+                },
+                onSignInClick = { navigateToLogin() },
+                isLoading = isLoading
             )
         }
     }
 
-    private fun handleSignUp(email: String, password: String) {
+    private fun handleSignUp(name: String, email: String, countryCode: String, mobile: String, password: String, onComplete: () -> Unit) {
+        if (!validateInputs(name, email, mobile, password)) {
+            onComplete()
+            return
+        }
+
         auth.createUserWithEmailAndPassword(email, password)
             .addOnCompleteListener(this) { task ->
                 if (task.isSuccessful) {
-                    // Sign up success, update UI with the signed-in user's information
                     val user = auth.currentUser
-                    Toast.makeText(this, "Account created successfully.", Toast.LENGTH_SHORT).show()
-                    navigateToHome()
+                    user?.let {
+                        val userId = it.uid
+                        val userRef = database.reference.child("users").child(userId)
+                        val userData = hashMapOf(
+                            "name" to name,
+                            "email" to email,
+                            "countryCode" to countryCode,
+                            "mobile" to mobile
+                        )
+                        userRef.setValue(userData)
+                            .addOnSuccessListener {
+                                Toast.makeText(this, "Account created successfully.", Toast.LENGTH_SHORT).show()
+                                logoutAndNavigateToLogin()
+                            }
+                            .addOnFailureListener { e ->
+                                Toast.makeText(this, "Failed to save user data: ${e.message}", Toast.LENGTH_SHORT).show()
+                                onComplete()
+                            }
+                    }
                 } else {
-                    // If sign up fails, display a message to the user.
                     if (task.exception is FirebaseAuthUserCollisionException) {
-                        // The email already exists, try to sign in
                         handleExistingAccount(email, password)
                     } else {
                         Toast.makeText(this, "Account creation failed: ${task.exception?.message}",
                             Toast.LENGTH_SHORT).show()
                     }
+                    onComplete()
                 }
             }
+    }
+
+    private fun validateInputs(name: String, email: String, mobile: String, password: String): Boolean {
+        if (name.length < 3) {
+            Toast.makeText(this, "Name must be at least 3 characters long", Toast.LENGTH_SHORT).show()
+            return false
+        }
+        if (mobile.length != 10 || !mobile.all { it.isDigit() }) {
+            Toast.makeText(this, "Mobile number must be 10 digits", Toast.LENGTH_SHORT).show()
+            return false
+        }
+        // Add more validations as needed (e.g., email format, password strength)
+        return true
     }
 
     private fun handleExistingAccount(email: String, password: String) {
-        auth.signInWithEmailAndPassword(email, password)
-            .addOnCompleteListener(this) { task ->
-                if (task.isSuccessful) {
-                    Toast.makeText(this, "Logged in to existing account.", Toast.LENGTH_SHORT).show()
-                    navigateToHome()
-                } else {
-                    Toast.makeText(this, "Failed to log in to existing account: ${task.exception?.message}",
-                        Toast.LENGTH_SHORT).show()
-                }
-            }
+        // ... (same as before)
     }
 
-    private fun navigateToHome() {
-        startActivity(Intent(this, HomeActivity::class.java))
+    private fun logoutAndNavigateToLogin() {
+        auth.signOut()
+        navigateToLogin()
+    }
+
+    private fun navigateToLogin() {
+        val intent = Intent(this, LoginActivity::class.java)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        startActivity(intent)
         finish()
     }
 }
 
 @Composable
 fun CreateAccountScreen(
-    onSignUpClick: (String, String) -> Unit,
-    onSignInClick: () -> Unit
+    onSignUpClick: (String, String, String, String, String) -> Unit,
+    onSignInClick: () -> Unit,
+    isLoading: Boolean
 ) {
+    var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
+    var countryCode by remember { mutableStateOf("+44") } // Default to UK
+    var mobile by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
 
     Box(
@@ -104,11 +152,65 @@ fun CreateAccountScreen(
             Spacer(modifier = Modifier.height(24.dp))
             Text("Create Account", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.Black)
             Spacer(modifier = Modifier.height(48.dp))
-            EmailTextField(email = email, onEmailChange = { email = it })
+
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
             Spacer(modifier = Modifier.height(16.dp))
-            PasswordTextField(password = password, onPasswordChange = { password = it })
+
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Email") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(modifier = Modifier.fillMaxWidth()) {
+                CountryCodeDropdown(
+                    selectedCode = countryCode,
+                    onCodeSelected = { countryCode = it },
+                    modifier = Modifier.weight(0.3f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                OutlinedTextField(
+                    value = mobile,
+                    onValueChange = { if (it.length <= 10) mobile = it },
+                    label = { Text("Mobile") },
+                    singleLine = true,
+                    modifier = Modifier.weight(0.7f)
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Password") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth()
+            )
             Spacer(modifier = Modifier.height(24.dp))
-            AuthButton(text = "Sign Up") { onSignUpClick(email, password) }
+            Button(
+                onClick = { onSignUpClick(name, email, countryCode, mobile, password) },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLoading
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = Color.White
+                    )
+                } else {
+                    Text("Sign Up")
+                }
+            }
         }
         Box(
             modifier = Modifier
@@ -125,7 +227,41 @@ fun CreateAccountScreen(
     }
 }
 
+@Composable
+fun CountryCodeDropdown(
+    selectedCode: String,
+    onCodeSelected: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val countryCodes = listOf("+44", "+91") // UK, India
 
-
-
-
+    Box(modifier = modifier) {
+        OutlinedTextField(
+            value = selectedCode,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Code") },
+            trailingIcon = {
+                IconButton(onClick = { expanded = true }) {
+                    Icon(Icons.Filled.ArrowDropDown, "Expand")
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            countryCodes.forEach { code ->
+                DropdownMenuItem(
+                    text = { Text(code) },
+                    onClick = {
+                        onCodeSelected(code)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}

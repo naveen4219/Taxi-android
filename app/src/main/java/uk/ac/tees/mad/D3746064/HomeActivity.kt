@@ -5,8 +5,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Parcelable
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.appcompat.app.AppCompatActivity
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -46,6 +50,8 @@ import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Search
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentActivity
 import coil.compose.AsyncImage
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.firebase.database.FirebaseDatabase
@@ -53,6 +59,7 @@ import kotlinx.parcelize.Parcelize
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.roundToInt
+
 
 data class CarType(
     val type: String = "",
@@ -66,9 +73,12 @@ data class RouteInfo(
 )
 
 
-class HomeActivity : ComponentActivity() {
+class HomeActivity : AppCompatActivity() {
     private lateinit var placesClient: PlacesClient
     private lateinit var geoApiContext: GeoApiContext
+    private lateinit var biometricPrompt: BiometricPrompt
+    private lateinit var promptInfo: BiometricPrompt.PromptInfo
+
 
     companion object {
         private const val LOCATION_PERMISSION_REQUEST_CODE = 1
@@ -77,18 +87,70 @@ class HomeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestLocationPermission()
+        initializePlacesAndGeoApi()
 
+        if(intent.getStringExtra("showAuth")!=null &&intent.getStringExtra("showAuth").equals("yes") ){
+            setupBiometricAuthentication()
+        }
+
+        setContent {
+            HomeScreen(placesClient, geoApiContext)
+        }
+
+    }
+
+    private fun initializePlacesAndGeoApi() {
         val apiKey = getApiKey()
-
         if (!Places.isInitialized()) {
             Places.initialize(applicationContext, apiKey)
         }
         placesClient = Places.createClient(this)
+        geoApiContext = GeoApiContext.Builder().apiKey(apiKey).build()
+    }
 
-        geoApiContext = GeoApiContext.Builder()
-            .apiKey(apiKey)
+    private fun setupBiometricAuthentication() {
+        val biometricManager = BiometricManager.from(this)
+        when (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)) {
+            BiometricManager.BIOMETRIC_SUCCESS -> {
+                initBiometricPrompt()
+                biometricPrompt.authenticate(promptInfo)
+            }
+            BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE ->
+                showToastAndFinish("No biometric features available on this device.")
+            BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE ->
+                showToastAndFinish("Biometric features are currently unavailable.")
+            BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED ->
+                showToastAndFinish("No biometric credentials are enrolled.")
+            else -> showToastAndFinish("Biometric authentication is not available.")
+        }
+    }
+
+    private fun initBiometricPrompt() {
+        val executor = ContextCompat.getMainExecutor(this)
+        biometricPrompt = BiometricPrompt(this, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    showToastAndFinish("Authentication error: $errString")
+                }
+
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    Toast.makeText(applicationContext, "Authentication succeeded!", Toast.LENGTH_SHORT).show()
+                    showHomeScreen()
+                }
+
+                override fun onAuthenticationFailed() {
+                    showToastAndFinish("Authentication failed")
+                }
+            })
+
+        promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Biometric login for BetterCommute")
+            .setSubtitle("Log in using your biometric credential")
+            .setNegativeButtonText("Cancel")
             .build()
+    }
 
+    private fun showHomeScreen() {
         setContent {
             HomeScreen(placesClient, geoApiContext)
         }
@@ -100,11 +162,8 @@ class HomeActivity : ComponentActivity() {
     }
 
     private fun requestLocationPermission() {
-        if (ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(
                 this,
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
@@ -112,7 +171,18 @@ class HomeActivity : ComponentActivity() {
             )
         }
     }
+
+    private fun showToastAndFinish(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        finish()
+    }
+
+    override fun onBackPressed() {
+        super.onBackPressed()
+        finish()
+    }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -165,7 +235,10 @@ fun HomeScreen(placesClient: PlacesClient, geoApiContext: GeoApiContext) {
             TopAppBar(
                 title = { Text("BetterCommute", fontWeight = FontWeight.Bold) },
                 actions = {
-                    IconButton(onClick = { /* TODO: Open profile */ }) {
+                    IconButton(onClick = {
+                        val intent = Intent(context, ProfileActivity::class.java)
+                        context.startActivity(intent)
+                    }) {
                         Icon(Icons.Default.AccountCircle, contentDescription = "Profile")
                     }
                 }
