@@ -89,9 +89,9 @@ class HomeActivity : AppCompatActivity() {
         requestLocationPermission()
         initializePlacesAndGeoApi()
 
-        if(intent.getStringExtra("showAuth")!=null &&intent.getStringExtra("showAuth").equals("yes") ){
-            setupBiometricAuthentication()
-        }
+//        if(intent.getStringExtra("showAuth")!=null &&intent.getStringExtra("showAuth").equals("yes") ){
+//            setupBiometricAuthentication()
+//        }
 
         setContent {
             HomeScreen(placesClient, geoApiContext)
